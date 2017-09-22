@@ -1,0 +1,12 @@
+{
+  "name": "kamedlia",
+  "version": "1.0.0",
+  "description": "A kamedlia based p2p network ",
+  "main": "peer.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node peer.js $PORT"
+  },
+  "author": "Fifty50",
+  "license": "ISC"
+}
