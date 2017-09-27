@@ -21,6 +21,8 @@ var ID = parseInt(shaID.substring(shaID.length-2,shaID.length),16); //to sidste 
 
 var DHT = [];
 
+var valueStored = {};
+
 var RCPIDSendOut = [];
 
 // Will be given through command prompt
@@ -286,12 +288,55 @@ function SendFindNode(nodeIP, nodePort, targetID, callbackFunction){
   request(options, callbackFunction);
 }
 
+function Store(value, valueID){
+  var fullKey = sha1(valueID);
+  var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
+  valueStored[fullKey] = value;
+  var nodes = GetKClosestNodesToID(key);
+
+  for(var i = 0; i < nodes.length; i++){
+    SendStoreValue(nodes[i], fullKey, value, function(){});
+  }
+  console.log(valueStored);
+}
+
+function SendStoreValue(node, key, value, callbackFunction) {
+   var RCPID = sha1((Math.random()*160*7)+"");
+  RCPIDSendOut.push(RCPID);
+
+  var options = {
+    uri: 'http://'+node.IP+':'+node.Port+'/api/kademlia/store',
+    headers: {
+      'rcpid': RCPID,
+      'senderid': ID,
+      'senderip': hostname,
+      'senderport': port,
+      'key': key,
+      'value': value
+    }
+  };
+  request.post(options, callbackFunction);
+}
 
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
   extended: true
 }));
 
+
+function GetValueStoredAsHTML(){
+  var html = '<table border=\"1\">';	
+  var valueKeys = Object.getOwnPropertyNames(valueStored);
+  html += '<tr> <th> key </th> <th> value </th> </tr>';
+  for(var i = 0; i<valueKeys.length; i++){
+    var key = valueKeys[i];
+    var value = valueStored[key];
+    html += '<tr>' + '<td>' + key + '</td> <td>' + value + '</td> </tr>';
+  }
+  html += '</table>';
+
+  return html;
+}
 
 // on the request to root (localhost:3000/)
 app.get('/', function (req, res) {
@@ -301,7 +346,15 @@ app.get('/', function (req, res) {
     +'<form action=\"/onbootstrap\" method=\"post\">IP:<br>'
     +'<input type=\"text\" name=\"ip\"><br>Port:<br>'
     +'<input type=\"text\" name=\"port\">'
-    +'<input type=\"submit\" value="Ping Node\"></form></body>');
+    +'<input type=\"submit\" value="Ping Node\"></form>'
+    +'<br> My Values: <br>' + GetValueStoredAsHTML()
+    +'<br> <form action=\"/storeValueManually\" method=\"post\">ValueID:<br>'
+    +'<input type=\"text\" name=\"valueID\"><br>Value:<br>'
+    +'<input type=\"text\" name=\"value\">'
+    +'<input type=\"submit\" value="Store Value\"></form>'
+
+    );
+
     res.end();
 });
 
@@ -387,6 +440,20 @@ app.get('/api/kademlia/find_node', function (req, res) {
     res.end();
 });
 
+// when a value is stored
+app.post('/api/kademlia/store', function(req, res){
+   console.log((new Date()).toDateString(), "-Store-" );
+    var senderID = req.header('senderid');
+    var senderIP = req.header('senderip');
+    var senderPort = req.header('senderport');
+    var rcpid = req.header('rcpid');
+    var key = req.header('key');
+    var value = req.header('value');
+    valueStored[key] = value;
+    res.sendStatus(200);
+});
+
+
 // Called whenever we manually ping a node through the form on the website
 app.post('/onbootstrap', function (req, res) {
     var ip = req.param('ip', null);
@@ -396,6 +463,17 @@ app.post('/onbootstrap', function (req, res) {
     res.redirect('/');
     res.end();
 });
+
+// Called whenever we store a value manually
+app.post('/storeValueManually', function (req, res) {
+    var valueID = req.param('valueID', null);
+    var value = req.param('value', null);
+    console.log(value, valueID);
+    Store(value, valueID);
+    res.redirect('/');
+    res.end();
+});
+
 
 // Variables for pinging a list of nodes
 // Because pinging is asynchronous we need to keep track of how far we have gone
