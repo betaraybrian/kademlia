@@ -13,287 +13,279 @@ const b = 8; //størelsen af ID space
 const k = 2; // max antal nodes i bucket
 const tExpire = 86400;
 
-const hostname = '127.0.0.1';
+const hostname = 'localhost';
 var port = 3000;
 
 var shaID = sha1(port*Math.random()+"");
 var ID = parseInt(shaID.substring(shaID.length-2,shaID.length),16); //to sidste bit tages og konverteres til integer
 
-var DHT = {canSplit : true, i : b-1, children : [], level : 1, parent: null};
-var numberOfNodes = 0;
-var numberOfServersInTotal = 0;
+var DHT = [];
 
+var RCPIDSendOut = [];
+
+// Will be given through command prompt
+var BoostrapIP = ''; // The IP of the first node we are gonna connect to
+var BoostrapPort = 0; // The port of the first node we are gonna connect to
+
+// Get the command prompt arguments
+// So the stuff you write after 'node peer.js'
+// index = 0 is the word 'node'
+// index = 1 is the word 'peer.js'
+// So indext 2 and thereafter is the arguments passed
 process.argv.forEach(function (val, index, array) {
   if(index == 2){
-    port = val;
+    port = val; // Get our own port
   }
   if(index == 3){
-    numberOfServersInTotal = val;
+    BoostrapIP = val; // First node ip
   }
-  //console.log(index + ': ' + val);
+  if(index == 4){
+    BoostrapPort = val; // First node port
+  }
 });
 
-
-function AddNeighbourNode(NodeID, NodeIP, NodePort){
-  var node = {ID : NodeID, IP : NodeIP, Port : NodePort};
-  var dist = Distance(ID, NodeID);
-
-  AddNodeToDHT(node, dist);
+// Makes the initial empty DHT
+// Since bouvin mentioned it would be okay not to do the splitting thing
+// we are just gonna make a list from the start for every potential bucket
+function InitializeDHT(){
+  var RoutingTable = [];
+  for(var i = 0; i < b; i++){
+    RoutingTable[i] = [];
+  }
+  DHT = RoutingTable;
 }
 
-function AddNodeToDHT(node, dist){
-  var currentBucket = DHT;
-  var hasFoundBucket = false;
+/// Function to attempt to add a new node to our bucket
+function AddNeighbourNode(NodeID, NodeIP, NodePort){
+  if(NodeIP == hostname && NodePort == port && NodeID == ID){
+    // this is ourselves
+    return;
+  }
+  // Get the distance to the node
+  var dist = Distance(ID, NodeID);
+  // Create a node object
+  var node = {ID : NodeID, IP : NodeIP, Port : NodePort, Dist : dist};
 
-  while (hasFoundBucket == false){
+  // Try and add the node to the DHT
+  AddNodeToDHT(node, GetBucketIndexFromDistance(dist));
+}
 
-    if(currentBucket.hasOwnProperty('canSplit')){
-      // This is a bucket
-      if(currentBucket.children.length > 0){
+// Function to figure out which bucket the node should go in
+// It should go in bucket i where the distance is between 2^i and 2^i+1
+function GetBucketIndexFromDistance(dist){
+  var index = 0;
+  var res = -1;
+  while(res == -1){
+    // Checks if we are at our i
+    if(dist >= Math.pow(2,index) && dist < Math.pow(2, index+1)){
+      // We have found the right bucket.
+      res = index;
+    }
+    // Try an i value that is 1 larger
+    index ++;
+  }
+  return res;
+}
 
-        if(currentBucket.children[0].hasOwnProperty('canSplit')){
-          // We know that there are more buckets beneath us.
-          // We need to find which one
-          if(dist >= Math.pow(2, currentBucket.i)){
-            currentBucket = currentBucket.children[1];
-          }else{
-            currentBucket = currentBucket.children[0];
-          }
-        }else{
-          // There are nodes in it. Just return it
-          hasFoundBucket = true;
+function AddNodeToDHT(node, index){
+  var bucket = DHT [index];
+
+  // Is there actually a bucket there
+  // Basically checks that the index parameter is not bonkers
+  if(bucket != null){
+    if(bucket.includes(node)){ // The bucket already has the node
+      console.log('trying to add a node we already have');
+      return;
+    }
+
+    if(bucket.length < k){ // Is there room in this bucket?
+      // There is room. Add the node
+      bucket.push(node);
+      console.log('Adding node', node);
+    }else{
+      // No room. Check if we are closer to the node than any of the ones in the list
+      var isCloserThanAnotherNode = false;
+      for(var i = k-1; i >= 0; i--){ // Looping backwards because we are removing from the list
+        if(bucket[i].Dist > node.Dist){
+          // We are closer than someone!
+          // Remove that node from the list
+          bucket.splice(1,i);
+          isCloserThanAnotherNode = true;
+          break;
         }
-      }else{
-        // This is an empty bucket. So this will be fine to add to.
-        hasFoundBucket = true;
       }
 
-    }else{
-      // This is the list of nodes inside a bucket
-      hasFoundBucket = true;
+      if(isCloserThanAnotherNode){
+        // We were closer than another node and removed it.
+        bucket.push(node);
+        console.log('Adding node', node);
+      }else{
+        // No room in bucket and we weren't closer than any of the ones there
+        // Let's see if they are all still alive
+        console.log('Ping stuff in list');
+        PingList(bucket, function(wasAllAlive, badIndexes){
+          // There was a dead node
+          if(wasAllAlive == false){
+            var toRemove = badIndexes[badIndexes.length-1];
+            console.log('We found a dead node. Removing it', '====================@@@@@@@@@@@@@@@@@=============', badIndexes);
+            console.log(bucket[toRemove]);
+            console.log(bucket, toRemove);
+            bucket.splice(1, toRemove);
+            console.log(bucket);
+            //bucket.push(node);
+            //console.log('Adding node', node);
+          }else{
+
+          }
+        });
+      }
+
     }
   }
-
-  // now currentBucket is the bucket we should be placing our node in
-
-  if(currentBucket.children.length < k){
-    currentBucket.children.push(node);
-    numberOfNodes++;
-  }else{
-    if(currentBucket.level < b && currentBucket.canSplit){ //ikke i leaf og far-bucket
-      // This full bucket can be split into sub buckets
-      SplitBucket(currentBucket);
-      AddNodeToDHT(node, dist); //den nye node skal indsættes i bucket
-    }else{
-      // ping the stuff in the list to see if we can add to it.
-      console.log("We need to ping all the nodes in a bucket");
-    }
-  }
-
-  console.log(DHT);
 }
 
-function SplitBucket(bucket){
-  var newLevel = bucket.level +1;
-  var newI = bucket.i -1;
-
-  var b1 = {canSplit : true, i : newI, children : [], level : newLevel, parent : bucket};
-  var b2 = {canSplit : false, i : newI, children : [], level : newLevel, parent : bucket}; // far bucket kan aldrig deles
-
-  for(var b = 0; b < k; b++){
-    var child = bucket.children[b];
-    var dist = Distance(ID, child.NodeID);
-    if(dist >= Math.pow(2, newI)){
-      b2.children.push(child);
-    }else{
-      b1.children.push(child);
+function IsOriginOfRCPID(rcpid){
+  for(var i = 0; i < RCPIDSendOut.length; i++){
+    if(RCPIDSendOut[i] == rcpid){
+      return true;
     }
   }
-
-  bucket.children = [b1, b2];
+  return false;
 }
 
+// Function that returns the BITWISE XOR between the 2 numbers
 function Distance(x,y){
   return x ^ y;
 }
 
-function GetHTMlFormattedListOfPeers(bucket){
-  var html = '';
+// Returns an formatted HTML tr (table row) element for
+function GetHTMlTableRowFromBucket(bucket, index){
+  var html = '<tr><td>'+index+'</td><td>';
 
-  if(bucket.hasOwnProperty('canSplit')){
-    for(var i = 0; i < bucket.children.length; i++){
-      html += GetHTMlFormattedListOfPeers(bucket.children[i]);
+  // Is there a bucket here?
+  if(bucket != null ){
+
+    // Yes!
+    for(var i = 0; i < bucket.length; i++){
+      html += '<a href=\"http://'+bucket[i].IP+':'+bucket[i].Port+'\">'+bucket[i].ID+'('+bucket[i].Dist+')'+'</a> &nbsp;';
     }
-  }else{
-      html += '<li><a href=\"http://'+bucket.IP+':'+bucket.Port+'\" >'+bucket.ID+'</a></li>';
   }
 
+
+
+  html += '</td></tr>';
   return html;
 }
 
+// Returns a formatted html table element with all of our known nodes
 function GetHTMLListOfPeers(){
-  return '<ul>'+GetHTMlFormattedListOfPeers(DHT)+'</ul> <br>'
+  var html = '<table border=\"1\">';
+
+  for(var i = 0; i < b; i++){
+    html += GetHTMlTableRowFromBucket(DHT[i], i);
+  }
+
+  html += '</table><br>';
+  return html;
 }
 
-function GetKNodesClosestToNodeId(targetNodeID){
+// Returns a list of the (up to) k closets nodes to the targetID
+function GetKClosestNodesToID(targetNodeID){
   var closetsNodes = [];
   var checkedIndexes = [];
   var nextToCheck = [];
   var distToTarget = Distance(ID, targetNodeID);
 
-  var nodes = GetAllPeersAsList();
-
-  var indexToCheck = 0;
-  var lastDif = 9001;
-  for(var i = 0; i < nodes.length; i++){
-    var dif = Math.abs(distToTarget - Distance(ID, nodes[i].ID));
-    if(dif < lastDif){
-      indexToCheck = i;
-      lastDif = dif;
-    }
-  }
-
-  nextToCheck.push(indexToCheck);
-
-  while( nextToCheck.length > 0 && closetsNodes.length < k ){
+  nextToCheck.push(GetBucketIndexFromDistance(distToTarget));
+  while(closetsNodes.length < k && nextToCheck.length > 0){
+    // Take the first element from the list
+    // This is the bucket we are going to be looking at
     var index = nextToCheck.shift();
-    checkedIndexes.push(index);
-    if(index+1 < nodes.length){
-      if(checkedIndexes.includes(index+1) == false){
-        nextToCheck.push(index+1);
-      }
-
-    }
-    if(index-1 > -1){
-      if(checkedIndexes.includes(index-1) == false){
-        nextToCheck.push(index-1);
+    checkedIndexes.push(index); // Make sure we don't check the same bucket twice
+    // Get the bucket we are gonna be looking through
+    var bucketToCheck = DHT[index];
+    // Loop through it's children
+    for(var i = 0; i < bucketToCheck.length; i++){
+      if(closetsNodes.length < k){ // Make sure we are not overfilling the list of nodes
+        closetsNodes.push(bucketToCheck[i]); // Add this new node to the list
       }
     }
-    console.log(index);
-    // sort the list
-    if(nodes[index].ID != targetNodeID){
-      closetsNodes.push(nodes[index]);
+    var downIndex = index-1;
+    // is index-1 a valid bucket? Have we checket it before?
+    if(downIndex >= 0 && checkedIndexes.includes(downIndex) == false){
+      nextToCheck.push(downIndex);
     }
-
-
+    var upIndex = index+1;
+    // is index-1 a valid bucket? Have we checket it before?
+    if(upIndex < b && checkedIndexes.includes(upIndex) == false){
+      nextToCheck.push(upIndex);
+    }
   }
 
-  /*while (closetsNodes.length < k && closetsNodes.length < numberOfNodes){
-    if(currentBucket.children[0].hasOwnProperty('canSplit') == false){
-      for (var i=0; i < currentBucket.children.length; i++){
-        closetsNodes.push(currentBucket.children[i]);
-      }
-      checkedBuckets.push(currentBucket);
-    }
-    var hasFoundBucket = false;
-    var bucketLookingAt = currentBucket;
-    if (bucketLookingAt.parent != null){
-      while (hasFoundBucket == false){
-        for (var i=0; i < k ; i++){
-          if (checkedBuckets.includes(bucketLookingAt.parent.children[i]) == false){ //hvis ikke søskende er tjekket
-            currentBucket = bucketLookingAt.parent.children[i];
-          }else{
-            checkedBuckets.push(bucketLookingAt.parent);
-            bucketLookingAt = bucketLookingAt.parent;
-          }
-        }
-      }
-    }
-  }*/
-
-  console.log('The closest nodes:',closetsNodes);
 
   return closetsNodes;
 }
 
-function GetAllPeersAsList(){
-  return GetNodesFromBucket(DHT);
+// Function to call Ping on ANOTHER node
+// Will call the function callbackFunction when done
+function SendPing(nodeIP, nodePort, callbackFunction, rcpid){
+
+if(nodeIP == hostname && nodePort == port){
+  // this is ourselves
+  return;
 }
 
-function GetNodesFromBucket(bucket){
-  var nodes = [];
-
-  if(bucket.hasOwnProperty('canSplit')){
-    for(var i = 0; i < bucket.children.length; i++){
-      var nodeList = GetNodesFromBucket(bucket.children[i]);
-      for(var j = 0; j < nodeList.length; j++){
-        nodes.push(nodeList[j]);
-      }
-
-    }
+  // check if we have been given and rcpid to use
+  // this is used when pinging back after we ourselves was pinged
+  if(rcpid === undefined){
+    // Generate a random RCPID for the request as per the Kademlia specs
+    rcpid = sha1((Math.random()*160*7)+"");
+    RCPIDSendOut.push(rcpid);
   }else{
-      nodes.push(bucket); ;
+    console.log('Sending ping with already known rcpid');
+    RCPIDSendOut.push(rcpid);
   }
 
-  return nodes;
-}
-
-function GetBucketClosestsToDist(dist){
-  var currentBucket = DHT;
-  var hasFoundBucket = false;
-  while(hasFoundBucket == false){
-    if(currentBucket.hasOwnProperty('canSplit')){
-      if(currentBucket.children > 0){
-        if(currentBucket.children[0].hasOwnProperty('canSplit')){
-          // We have sub buckets
-          if(dist >= Math.pow(2, currentBucket.i)){
-            currentBucket = currentBucket.children[1];
-          }else{
-            currentBucket = currentBucket.children[0];
-          }
-        }else{
-          hasFoundBucket = true;
-        }
-      }else{
-        hasFoundBucket = true;
-      }
-    }else{
-      hasFoundBucket = true;
-    }
-  }
-
-  return currentBucket;
-}
-
-function SendPing(nodeIP, nodePort, callbackFunction){
-
-  var RCPID = sha1((Math.random()*160*7)+"");
   console.log('http://'+nodeIP+':'+nodePort+'/api/kademlia/ping');
 
   var options = {
     uri: 'http://'+nodeIP+':'+nodePort+'/api/kademlia/ping',
     headers: {
-      'RCPID': RCPID,
-      'senderID': ID,
-      'senderIP': hostname,
-      'senderPort': port
+      'rcpid': rcpid,
+      'senderid': ID,
+      'senderip': hostname,
+      'senderport': port
     }
   };
 
   request(options, callbackFunction);
 }
 
-
+// Function to call Find_Node on ANOTHER node
+// Will look for the node with the id targetID
+// Will call the function callbackFunction when done
 function SendFindNode(nodeIP, nodePort, targetID, callbackFunction){
+
+  if(nodeIP == hostname && nodePort == port){
+    // this is ourselves
+    return;
+  }
   var RCPID = sha1((Math.random()*160*7)+"");
+  RCPIDSendOut.push(RCPID);
 
   var options = {
     uri: 'http://'+nodeIP+':'+nodePort+'/api/kademlia/find_node',
     headers: {
-      'RCPID': RCPID,
-      'senderID': ID,
-      'senderIP': hostname,
-      'senderPort': port,
-      'targetNodeID': targetID
+      'rcpid': RCPID,
+      'senderid': ID,
+      'senderip': hostname,
+      'senderport': port,
+      'targetnodeid': targetID
     }
   };
   request(options, callbackFunction);
 }
 
-
-function KnowsNode(node){
-  return GetAllPeersAsList().includes(node);
-}
 
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
@@ -303,36 +295,39 @@ app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
 
 // on the request to root (localhost:3000/)
 app.get('/', function (req, res) {
-    res.send('<b>Welcome</b><br>'
+    res.send('<b>Welcome!</b><br>'
     +'Peer:'+ID+'<br>'+'@'+hostname+':'+port+' <br>'
     +'My k-bucket:<br>'+ GetHTMLListOfPeers()+'<br>'
     +'<form action=\"/onbootstrap\" method=\"post\">IP:<br>'
     +'<input type=\"text\" name=\"ip\"><br>Port:<br>'
     +'<input type=\"text\" name=\"port\">'
-    +'<input type=\"submit\" value="Submit\"></form></body>');
+    +'<input type=\"submit\" value="Ping Node\"></form></body>');
     res.end();
 });
 
 // On localhost:port/api/kadem/ping
 app.get('/api/kademlia/ping', function (req, res) {
-  console.log("was pinged");
-    var senderID = req.header('senderID');
-    var senderIP = req.header('senderIP');
-    var senderPort = req.header('senderPort');
-    var rcpid = req.header('RCPID');
+    console.log((new Date()).toDateString(), "-Ping-" );
+    var senderID = req.header('senderid');
+    var senderIP = req.header('senderip');
+    var senderPort = req.header('senderport');
+    var rcpid = req.header('rcpid');
 
-    console.log(senderID);
+
+    var shouldPingBack = false;
+
+    // Just making sure we didn't ping ourselves
     if(senderID != ID || senderIP != hostname || senderPort != port){
-      console.log('not us. Adding node');
-      AddNeighbourNode(senderID, senderIP, senderPort);
-
+      // Send the ping
       res.set({
         'Content-Type': 'text/plain',
-        'RCPID': rcpid,
-        'senderID': ID,
-        'senderIP': hostname,
-        'senderPort': port
+        'rcpid': rcpid,
+        'senderid': ID,
+        'senderip': hostname,
+        'senderport': port
       });
+
+      shouldPingBack = !IsOriginOfRCPID(rcpid); // check if we send the first ping in the chain. if not, then ping
 
       res.status(200);
 
@@ -340,71 +335,126 @@ app.get('/api/kademlia/ping', function (req, res) {
       res.sendStatus(403);
     }
     res.end();
+
+    // Send the ping back if need be
+    if(shouldPingBack){
+      console.log('Was pinged and is now pinging back');
+        SendPing(senderIP, senderPort, function(error, response, body) {
+          console.log('I was ponged back');
+          if(response.statusCode == 200){
+            console.log('Code 200. Yay');
+            var senderID = response.headers['senderid'];
+            var senderIP = response.headers['senderip'];
+            var senderPort = response.headers['senderport'];
+            console.log(senderID, senderIP, senderPort);
+            AddNeighbourNode(senderID, senderIP, senderPort);
+          }
+        }, rcpid); // use the same rcpid to make the chain stop quickly
+    }
+
+
 });
 
 // On localhost:port/find_node
 app.get('/api/kademlia/find_node', function (req, res) {
-    var senderID = req.header('senderID');
-    var senderIP = req.header('senderIP');
-    var senderPort = req.header('senderPort');
-    var rcpid = req.header('RCPID');
-    var targetNodeID = req.header('targetNodeID');
+    console.log((new Date()).toDateString(), "-Find Node-" );
+    var senderID = req.header('senderid');
+    var senderIP = req.header('senderip');
+    var senderPort = req.header('senderport');
+    var rcpid = req.header('rcpid');
+    var targetNodeID = req.header('targetnodeid');
 
     if(senderID != ID || senderIP != hostname || senderPort != port){
       console.log("Looking for nodes close to: "+targetNodeID);
 
       res.set({
         'Content-Type': 'application/json',
-        'RCPID': rcpid,
-        'senderID': ID,
-        'senderIP': hostname,
-        'senderPort': port
+        'rcpid': rcpid,
+        'senderid': ID,
+        'senderip': hostname,
+        'senderport': port
       });
 
 
        res.type('json');
       res.status(200);
-      res.send( JSON.stringify( { nodes: GetKNodesClosestToNodeId(targetNodeID) } ) );
+      var nodes = GetKClosestNodesToID(targetNodeID);
+      console.log('Nodes:', nodes, nodes.length);
+      res.send( JSON.stringify( { nodes:  nodes} ) );
     }else{
       res.sendStatus(403);
     }
     res.end();
 });
 
-
+// Called whenever we manually ping a node through the form on the website
 app.post('/onbootstrap', function (req, res) {
     var ip = req.param('ip', null);
     var nport = req.param('port', null);
 
     Bootstrap(ip, nport);
-
+    res.redirect('/');
     res.end();
 });
 
+// Variables for pinging a list of nodes
+// Because pinging is asynchronous we need to keep track of how far we have gone
+
 var nodesToPing = [];
 var index = 0;
-function PingList(nodes){
+
+// Sets up the variables and pings the first node
+function PingList(nodes, callbackFunction){
+  console.log('Pinging List');
   nodesToPing = nodes;
   index = 0;
-  PingNext();
+  PingNext(callbackFunction, true, []);
 }
 
-function PingNext(){
+// Checks if the index is a valid node in the nodesToPing list
+// If it is, then it pings it and only when it gets a response does it check the next one
+function PingNext(callbackFunction, isAllAlive, badIndexes){
+  // Is there more nodes to ping?
+  console.log(index);
   if(index >= nodesToPing.length){
+    console.log('End of ping list');
+    callbackFunction(isAllAlive, badIndexes);
     return;
   }
-  SendPing(nodesToPing[index].IP, nodesToPing[index].Port, function(error, response, body){
-    if(response.statusCode == 200){
-      console.log('Code 200. Yay');
-      var senderID = response.headers['senderid'];
-      var senderIP = response.headers['senderip'];
-      var senderPort = response.headers['senderport'];
-      console.log(senderID, senderIP, senderPort);
-      AddNeighbourNode(senderID, senderIP, senderPort);
-      index++;
-      PingNext();
-    }
-  });
+
+  if(nodesToPing[index].IP == hostname && nodesToPing[index].Port == port && nodesToPing[index].ID == ID){
+    // Don't ping ourselves
+    index++;
+    PingNext(callbackFunction, isAllAlive, badIndexes);
+  }else{
+    // More nodes! Send the ping
+    SendPing(nodesToPing[index].IP, nodesToPing[index].Port, function(error, response, body){
+      console.log('--test--');
+      if(error != null){
+        if(response.statusCode == 200){
+          // The node is alive
+          console.log('Code 200b');
+          index++;
+          PingNext(callbackFunction, isAllAlive, badIndexes);
+        }else{
+          // The node is not alive
+          console.log('bad index here');
+          badIndexes.push(index);
+          index++;
+          PingNext(callbackFunction, false, badIndexes);
+        }
+      }else{
+        // The node is not alive
+        console.log('bad index here');
+        badIndexes.push(index);
+        index++;
+        PingNext(callbackFunction, false, badIndexes);
+      }
+
+    });
+  }
+
+
 
 }
 
@@ -414,44 +464,55 @@ app.listen(port, function () {
 
 });
 
-//setTimeout(StartupMethod, 3000);
-
 function StartupMethod(){
-  var PingPort = port;
-
-  while(PingPort == port){
-    PingPort = getRandomInt(3000, 3000+numberOfServersInTotal);
+  // We will only ping a node on startup if we
+  // are given that through the command line
+  if(BoostrapIP != '' && BoostrapPort != 0){
+    Bootstrap(BoostrapIP, BoostrapPort);
   }
 
-  Bootstrap('127.0.0.1', PingPort);
 }
 
+// Boostrap onto the network
 function Bootstrap(nIP, nPort){
-  if(nIP != null && nPort != null){
 
+  // Check that the ip and ports are not null or something
+  if(nIP != null && nPort != null){
+    console.log('Sending Ping');
+    // Send the ping
     SendPing(nIP, nPort, function(error, response, body) { //function er respons på ping
       console.log('I was ponged back');
       if(response.statusCode == 200){
-        console.log('Code 200. Yay');
+        console.log('Code 200');
         var senderID = response.headers['senderid'];
         var senderIP = response.headers['senderip'];
         var senderPort = response.headers['senderport'];
-        console.log(senderID, senderIP, senderPort);
-        AddNeighbourNode(senderID, senderIP, senderPort);
 
+        AddNeighbourNode(senderID, senderIP, senderPort);
+        console.log('Sending Find Node to:', senderID, senderIP, senderPort);
         SendFindNode(senderIP, senderPort, ID, function (error, reponse, body) {
-          //console.log(response);
-          console.log('==== BREAK =====');
           var kNodes = JSON.parse(body).nodes;
-          console.log(kNodes);
-          PingList(kNodes);
-          //console.log(body);
+          console.log('Nodes returned', kNodes);
+          PingList(kNodes, function(isAllAlive, badIndexes){
+            // Done pinging all the nodes we should find
+            // Now we need to do the parallism thing
+            console.log('Callback called after finding first few nodes');
+            for(var i = 0; i < kNodes.length; i++){
+              if(badIndexes.includes(i) == false){
+                // This node is alive. Add it!
+                AddNeighbourNode(kNodes[i].ID, kNodes[i].IP, kNodes[i].Port);
+              }
+            }
+
+          });
+
         });
       }
     });
   }
 }
 
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+// STARTUP STUFF BELOW THIS LINE
+
+InitializeDHT(); // Initialize the routing table
+StartupMethod(); // Run the startup method and ping someone
