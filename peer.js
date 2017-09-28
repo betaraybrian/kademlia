@@ -300,7 +300,7 @@ function Store(value, valueID){
   console.log(valueStored);
 }
 
-function SendStoreValue(node, key, value, callbackFunction) {
+function SendStoreValue(node, fullKey, value, callbackFunction) {
    var RCPID = sha1((Math.random()*160*7)+"");
   RCPIDSendOut.push(RCPID);
 
@@ -311,12 +311,56 @@ function SendStoreValue(node, key, value, callbackFunction) {
       'senderid': ID,
       'senderip': hostname,
       'senderport': port,
-      'key': key,
+      'fullkey': fullKey,
       'value': value
     }
   };
   request.post(options, callbackFunction);
 }
+
+function GetValue(fullKey){
+	var value = valueStored[fullKey];
+	if(value == null || value === undefined){
+		return undefined;
+	}else{
+		return value;
+	}
+}
+
+
+function FindValue(fullKey){
+	var value = GetValue(fullKey);
+	if(value === undefined){
+		//find other nodes, we don't have the value
+		var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); 
+		var nodes = GetKClosestNodesToID(key);
+		return {'nodes' : nodes};
+
+	}else{
+		return {'value': value};
+	}
+}
+
+function SearchNetworkForValue(fullKey){
+	var result = FindValue(fullKey);
+	while(result.hasOwnProperty('nodes')){
+		//search for other nodes
+		for(var i=0; i<alpha; i++){
+
+		}
+	}
+	return result;
+}
+
+function FindNode(initialListofNodes){
+	var nodes = initialListofNodes;
+	var limit = Math.min(nodes.length,alpha);
+	for(var i=0; i<alpha; i++){
+		SendFindNode()
+	}
+
+}
+
 
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
@@ -447,10 +491,28 @@ app.post('/api/kademlia/store', function(req, res){
     var senderIP = req.header('senderip');
     var senderPort = req.header('senderport');
     var rcpid = req.header('rcpid');
-    var key = req.header('key');
+    var fullKey = req.header('fullkey');
     var value = req.header('value');
-    valueStored[key] = value;
+    valueStored[fullKey] = value;
     res.sendStatus(200);
+});
+
+
+app.get('/api/kademlia/find_value', function(req, res){
+	console.log((new Date()).toDateString(), "-FindValue-" );
+    var senderID = req.header('senderid');
+    var senderIP = req.header('senderip');
+    var senderPort = req.header('senderport');
+    var rcpid = req.header('rcpid');
+    var fullKey = req.header('fullkey');
+
+    var result = FindValue(fullKey);
+    res.type('json');
+    res.status(200);
+  
+    res.send( JSON.stringify( result ) );
+
+
 });
 
 
