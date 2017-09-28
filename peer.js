@@ -352,13 +352,64 @@ function SearchNetworkForValue(fullKey){
 	return result;
 }
 
-function FindNode(initialListofNodes){
-	var nodes = initialListofNodes;
+var nodes;
+var nodesVisited;
+
+function FindNode(initialListofNodes, targetID){
+	nodes = initialListofNodes;
+	nodesVisited = [];
 	var limit = Math.min(nodes.length,alpha);
-	for(var i=0; i<alpha; i++){
-		SendFindNode()
+	for(var i=0; i<limit; i++){
+		nodesVisited.push(nodes[i]);
+		var currentNode = nodes[i];
+		nodes.splice(1,i); //remove the node we are just about to visit  from the visit list
+		SendFindNode(currentNode.IP, currentNode.PORT, targetID, function(error, response, body){
+			if(response.statusCode == 200){
+				SendPing(currentNode.IP, currentNode.PORT, function(error, response, body){
+					if(response.statusCode == 200){
+						var senderID = response.headers['senderid'];
+        				var senderIP = response.headers['senderip'];
+       					var senderPort = response.headers['senderport'];
+
+        				AddNeighbourNode(senderID, senderIP, senderPort);
+					}
+				});
+				var kNodes = JSON.parse(body).nodes;
+				for (var i = kNodes.length - 1; i >= 0; i--) { // running thorugh the list backwards
+					if(nodesVisited.includes(kNodes[i]) == false){ //not visited this node before, then push
+						nodes.push(kNodes[i]);
+					}
+				}
+			}
+			IterativeFindNode(nodes.shift(), targetID); // shift = take first node in array and return it
+		});
 	}
 
+}
+
+function IterativeFindNode(node, targetID){
+	nodesVisited.push(node);
+	SendFindNode(node.IP, node.PORT, targetID, function(error, response, body){
+		if(response.statusCode == 200){
+			SendPing(currentNode.IP, currentNode.PORT, function(error, response, body){
+					if(response.statusCode == 200){
+						var senderID = response.headers['senderid'];
+        				var senderIP = response.headers['senderip'];
+       					var senderPort = response.headers['senderport'];
+
+        				AddNeighbourNode(senderID, senderIP, senderPort);
+					}
+			});
+			var kNodes = JSON.parse(body).nodes;
+			for (var i = kNodes.length - 1; i >= 0; i--) { // running thorugh the list backwards
+				if(nodesVisited.includes(kNodes[i]) == false){ //not visited this node before, then push
+					nodes.push(kNodes[i]);
+				}
+			}
+		}
+		IterativeFindNode(nodes.shift(), targetID); // shift = take first node in array and return it
+
+	});
 }
 
 
@@ -631,21 +682,9 @@ function Bootstrap(nIP, nPort){
         AddNeighbourNode(senderID, senderIP, senderPort);
         console.log('Sending Find Node to:', senderID, senderIP, senderPort);
         SendFindNode(senderIP, senderPort, ID, function (error, reponse, body) {
-          var kNodes = JSON.parse(body).nodes;
-          console.log('Nodes returned', kNodes);
-          PingList(kNodes, function(isAllAlive, badIndexes){
-            // Done pinging all the nodes we should find
-            // Now we need to do the parallism thing
-            console.log('Callback called after finding first few nodes');
-            for(var i = 0; i < kNodes.length; i++){
-              if(badIndexes.includes(i) == false){
-                // This node is alive. Add it!
-                AddNeighbourNode(kNodes[i].ID, kNodes[i].IP, kNodes[i].Port);
-              }
-            }
-
-          });
-
+         	var kNodes = JSON.parse(body).nodes;
+          	console.log('Nodes returned', kNodes);
+         	FindNode(kNodes, ID);
         });
       }
     });
