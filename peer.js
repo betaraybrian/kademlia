@@ -95,11 +95,13 @@ function AddNodeToDHT(node, index){
   // Is there actually a bucket there
   // Basically checks that the index parameter is not bonkers
   if(bucket != null){
-    if(bucket.includes(node)){ // The bucket already has the node
-      console.log('trying to add a node we already have');
-      return;
+    for (var i = bucket.length - 1; i >= 0; i--) {
+    	if(bucket[i].ID == node.ID){
+    		console.log('trying to add a node we already have');
+    		return;
+    	}
     }
-
+    
     if(bucket.length < k){ // Is there room in this bucket?
       // There is room. Add the node
       bucket.push(node);
@@ -125,9 +127,12 @@ function AddNodeToDHT(node, index){
         // No room in bucket and we weren't closer than any of the ones there
         // Let's see if they are all still alive
         console.log('Ping stuff in list');
-        PingList(bucket, function(wasAllAlive, badIndexes){
+        /*PingList(bucket, function(wasAllAlive, badIndexes){
           // There was a dead node
           if(wasAllAlive == false){
+          	for (var i = badIndexes.length - 1; i >= 0; i--) {
+          		bucket.splice(1,badIndexes[i]);
+          	}
             var toRemove = badIndexes[badIndexes.length-1];
             console.log('We found a dead node. Removing it', '====================@@@@@@@@@@@@@@@@@=============', badIndexes);
             console.log(bucket[toRemove]);
@@ -139,7 +144,7 @@ function AddNodeToDHT(node, index){
           }else{
 
           }
-        });
+        });*/
       }
 
     }
@@ -363,9 +368,14 @@ function FindNode(initialListofNodes, targetID){
 		nodesVisited.push(nodes[i]);
 		var currentNode = nodes[i];
 		nodes.splice(1,i); //remove the node we are just about to visit  from the visit list
-		SendFindNode(currentNode.IP, currentNode.PORT, targetID, function(error, response, body){
+		if(currentNode.IP == hostname && currentNode.Port == port && currentNode.ID == ID){
+			continue; //if this node is us then skip to next node in the forloop
+		}
+		console.log('sending findnode to', currentNode);
+		SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
+			console.log(error);
 			if(response.statusCode == 200){
-				SendPing(currentNode.IP, currentNode.PORT, function(error, response, body){
+				SendPing(currentNode.IP, currentNode.Port, function(error, response, body){
 					if(response.statusCode == 200){
 						var senderID = response.headers['senderid'];
         				var senderIP = response.headers['senderip'];
@@ -381,7 +391,9 @@ function FindNode(initialListofNodes, targetID){
 					}
 				}
 			}
-			IterativeFindNode(nodes.shift(), targetID); // shift = take first node in array and return it
+			if(nodes.length > 0){
+				IterativeFindNode(nodes.shift(), targetID); // shift = take first node in array and return it
+			}
 		});
 	}
 
@@ -389,9 +401,15 @@ function FindNode(initialListofNodes, targetID){
 
 function IterativeFindNode(node, targetID){
 	nodesVisited.push(node);
-	SendFindNode(node.IP, node.PORT, targetID, function(error, response, body){
+	if(node.IP == hostname && node.Port == port && node.ID == ID){
+		if(nodes.length > 0){
+			IterativeFindNode(nodes.shift(), targetID); // remove first element in list and return it
+		}
+		return; // stop running the rest of the code if this is the case
+	}
+	SendFindNode(node.IP, node.Port, targetID, function(error, response, body){
 		if(response.statusCode == 200){
-			SendPing(currentNode.IP, currentNode.PORT, function(error, response, body){
+			SendPing(node.IP, node.Port, function(error, response, body){
 					if(response.statusCode == 200){
 						var senderID = response.headers['senderid'];
         				var senderIP = response.headers['senderip'];
