@@ -151,6 +151,17 @@ function AddNodeToDHT(node, index){
   }
 }
 
+function HasNodeWithID(nodeID){
+	var bucket = DHT[ GetBucketIndexFromDistance( Distance(ID, nodeID) ) ];
+
+	for (var i = bucket.length - 1; i >= 0; i--) {
+		if(bucket[i].ID == nodeID){
+			return true;
+		}
+	}
+	return false;
+}
+
 function IsOriginOfRCPID(rcpid){
   for(var i = 0; i < RCPIDSendOut.length; i++){
     if(RCPIDSendOut[i] == rcpid){
@@ -242,13 +253,16 @@ if(nodeIP == hostname && nodePort == port){
   return;
 }
 
-  // check if we have been given and rcpid to use
+  // check if we have been given an rcpid to use
   // this is used when pinging back after we ourselves was pinged
   if(rcpid === undefined){
     // Generate a random RCPID for the request as per the Kademlia specs
     rcpid = sha1((Math.random()*160*7)+"");
     RCPIDSendOut.push(rcpid);
   }else{
+  	if(IsOriginOfRCPID(rcpid)){
+  		return;
+  	}
     console.log('Sending ping with already known rcpid');
     RCPIDSendOut.push(rcpid);
   }
@@ -376,6 +390,7 @@ function FindNode(initialListofNodes, targetID){
 			console.log(error);
 			if(response.statusCode == 200){
 				SendPing(currentNode.IP, currentNode.Port, function(error, response, body){
+					console.log('Got Ping fakjdlhdjaksdh');
 					if(response.statusCode == 200){
 						var senderID = response.headers['senderid'];
         				var senderIP = response.headers['senderip'];
@@ -401,7 +416,7 @@ function FindNode(initialListofNodes, targetID){
 
 function IterativeFindNode(node, targetID){
 	nodesVisited.push(node);
-	if(node.IP == hostname && node.Port == port && node.ID == ID){
+	if((node.IP == hostname && node.Port == port && node.ID == ID) || nodesVisited.includes(node)){
 		if(nodes.length > 0){
 			IterativeFindNode(nodes.shift(), targetID); // remove first element in list and return it
 		}
@@ -410,6 +425,7 @@ function IterativeFindNode(node, targetID){
 	SendFindNode(node.IP, node.Port, targetID, function(error, response, body){
 		if(response.statusCode == 200){
 			SendPing(node.IP, node.Port, function(error, response, body){
+				console.log('Got Ping oiahdjksahakjdlhdjaksdh');
 					if(response.statusCode == 200){
 						var senderID = response.headers['senderid'];
         				var senderIP = response.headers['senderip'];
@@ -503,17 +519,17 @@ app.get('/api/kademlia/ping', function (req, res) {
     res.end();
 
     // Send the ping back if need be
-    if(shouldPingBack){
+    if(shouldPingBack && HasNodeWithID(senderID) == false){
       console.log('Was pinged and is now pinging back');
         SendPing(senderIP, senderPort, function(error, response, body) {
           console.log('I was ponged back');
           if(response.statusCode == 200){
             console.log('Code 200. Yay');
-            var senderID = response.headers['senderid'];
-            var senderIP = response.headers['senderip'];
-            var senderPort = response.headers['senderport'];
-            console.log(senderID, senderIP, senderPort);
-            AddNeighbourNode(senderID, senderIP, senderPort);
+            var senderIDback = response.headers['senderid'];
+            var senderIPback = response.headers['senderip'];
+            var senderPortback = response.headers['senderport'];
+            console.log(senderIDback, senderIPback, senderPortback);
+            AddNeighbourNode(senderIDback, senderIPback, senderPortback);
           }
         }, rcpid); // use the same rcpid to make the chain stop quickly
     }
