@@ -103,7 +103,7 @@ function AddNodeToDHT(node, index){
     		return;
     	}
     }
-    
+
     if(bucket.length < k){ // Is there room in this bucket?
       // There is room. Add the node
       bucket.push(node);
@@ -353,7 +353,7 @@ function FindValue(fullKey){
 	var value = GetValue(fullKey);
 	if(value === undefined){
 		//find other nodes, we don't have the value
-		var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); 
+		var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16);
 		var nodes = GetKClosestNodesToID(key);
 		return {'nodes' : nodes};
 
@@ -377,7 +377,7 @@ var nodes;
 var nodesVisited;
 
 //check if we have the node - else startiterativefindnode
-function FindNode(targetID){
+function FindNode(targetID, onFinishedCallback){
   if (targetID == ID){
     return {'ID': ID, 'IP': hostname, 'Port': port};
   }
@@ -387,13 +387,16 @@ function FindNode(targetID){
     return getElementWithIDFromList(targetID, currentList);
   }
   nodesVisited = [];
-  IterativeFindNode(currentList, targetID);
-  console.log('result', result );
-  if (result.length == 0){
-    return {'error' : 'Node does not exist'};
-  }else{
-    return getElementWithIDFromList(targetID, result);
-  }
+  IterativeFindNode(currentList, targetID, function(result){
+    console.log('result is here', result );
+    if (result.length == 0){
+      onFinishedCallback( {'error' : 'Node does not exist'} );
+    }else{
+      onFinishedCallback( getElementWithIDFromList(targetID, result) );
+    }
+  });
+
+
 }
 
 function getElementWithIDFromList(targetID, list){
@@ -415,17 +418,16 @@ function BucketHasNodeWithID(targetID, bucket){
   return false;
 }
 
-var resultList = null;
 
-function IterativeFindNode(nodeList, targetID){
+function IterativeFindNode(nodeList, targetID, onFinishedCallback){
   if (BucketHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
     console.log('================ooo===============',nodeList);
-    resultList = nodeList;
+    onFinishedCallback(nodeList);
     return nodeList;
   }
   var currentNode = nodeList.shift();
   if (nodesVisited.includes(currentNode.ID)){
-    return IterativeFindNode(nodeList, targetID);
+    return IterativeFindNode(nodeList, targetID, onFinishedCallback);
   }else{
     nodesVisited.push(currentNode.ID);
     SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
@@ -435,11 +437,11 @@ function IterativeFindNode(nodeList, targetID){
           for (var i = kNodes.length - 1; i >= 0; i--) {
             if (nodesVisited.includes(kNodes[i].ID) == false){
               nodeList.push(kNodes[i]);
-            } 
+            }
           }
         }
       }
-      return IterativeFindNode(nodeList, targetID);
+      return IterativeFindNode(nodeList, targetID, onFinishedCallback);
     });
   }
 }
@@ -525,7 +527,7 @@ app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
 
 
 function GetValueStoredAsHTML(){
-  var html = '<table border=\"1\">';	
+  var html = '<table border=\"1\">';
   var valueKeys = Object.getOwnPropertyNames(valueStored);
   html += '<tr> <th> key </th> <th> value </th> </tr>';
   for(var i = 0; i<valueKeys.length; i++){
@@ -668,7 +670,7 @@ app.get('/api/kademlia/find_value', function(req, res){
     var result = FindValue(fullKey);
     res.type('json');
     res.status(200);
-  
+
     res.send( JSON.stringify( result ) );
 
 
@@ -699,11 +701,13 @@ app.post('/storeValueManually', function (req, res) {
 app.get('/findNodeManually', function(req,res){
   var nodeID = req.param('nodeID', null);
 
-  var result = FindNode(nodeID);
-  res.type('json');
-  res.status(200);
-  
-  res.send( JSON.stringify( result ) );
+  FindNode(nodeID, function(result){
+    res.type('json');
+    res.status(200);
+
+    res.send( JSON.stringify( result ) );
+  });
+
 });
 
 
