@@ -16,7 +16,7 @@ const tExpire = 86400;
 const hostname = 'localhost';
 var port = 3000;
 
-var shaID = sha1(port*Math.random()+"");
+var shaID = sha1(160*13*Math.random()+"");
 var ID = parseInt(shaID.substring(shaID.length-2,shaID.length),16); //to sidste bit tages og konverteres til integer
 
 var DHT = [];
@@ -68,7 +68,7 @@ function AddNeighbourNode(NodeID, NodeIP, NodePort){
   // Get the distance to the node
   var dist = Distance(ID, NodeID);
   // Create a node object
-  var node = {ID : NodeID, IP : NodeIP, Port : NodePort, Dist : dist};
+  var node = {ID : NodeID, IP : NodeIP, Port : NodePort};
 
   // Try and add the node to the DHT
   AddNodeToDHT(node, GetBucketIndexFromDistance(dist));
@@ -97,56 +97,39 @@ function AddNodeToDHT(node, index){
   // Is there actually a bucket there
   // Basically checks that the index parameter is not bonkers
   if(bucket != null){
-    for (var i = bucket.length - 1; i >= 0; i--) {
-    	if(bucket[i].ID == node.ID){
-    		console.log('trying to add a node we already have');
-    		return;
-    	}
+    if(ListHasNodeWithID(node.ID, bucket)){
+      console.log('trying to add a node we already have');
+      return;
     }
 
     if(bucket.length < k){ // Is there room in this bucket?
       // There is room. Add the node
       bucket.push(node);
       console.log('Adding node', node);
+      return;
     }else{
       // No room. Check if we are closer to the node than any of the ones in the list
-      var isCloserThanAnotherNode = false;
+      var indexOfNodeWithLongerDistance = -1;
       for(var i = k-1; i >= 0; i--){ // Looping backwards because we are removing from the list
-        if(bucket[i].Dist > node.Dist){
+        if(Distance(bucket[i].ID, ID) > Distance(node.ID, ID)){
           // We are closer than someone!
           // Remove that node from the list
-          bucket.splice(1,i);
-          isCloserThanAnotherNode = true;
+          indexOfNodeWithLongerDistance = i;
           break;
         }
       }
 
-      if(isCloserThanAnotherNode){
+      if(indexOfNodeWithLongerDistance != -1){
         // We were closer than another node and removed it.
+        bucket.splice(1, indexOfNodeWithLongerDistance);
         bucket.push(node);
         console.log('Adding node', node);
+        return;
       }else{
         // No room in bucket and we weren't closer than any of the ones there
         // Let's see if they are all still alive
         console.log('Ping stuff in list');
-        /*PingList(bucket, function(wasAllAlive, badIndexes){
-          // There was a dead node
-          if(wasAllAlive == false){
-          	for (var i = badIndexes.length - 1; i >= 0; i--) {
-          		bucket.splice(1,badIndexes[i]);
-          	}
-            var toRemove = badIndexes[badIndexes.length-1];
-            console.log('We found a dead node. Removing it', '====================@@@@@@@@@@@@@@@@@=============', badIndexes);
-            console.log(bucket[toRemove]);
-            console.log(bucket, toRemove);
-            bucket.splice(1, toRemove);
-            console.log(bucket);
-            //bucket.push(node);
-            //console.log('Adding node', node);
-          }else{
-
-          }
-        });*/
+        return;
       }
 
     }
@@ -187,7 +170,7 @@ function GetHTMlTableRowFromBucket(bucket, index){
 
     // Yes!
     for(var i = 0; i < bucket.length; i++){
-      html += '<a href=\"http://'+bucket[i].IP+':'+bucket[i].Port+'\">'+bucket[i].ID+'('+bucket[i].Dist+')'+'</a> &nbsp;';
+      html += '<a href=\"http://'+bucket[i].IP+':'+bucket[i].Port+'\">'+bucket[i].ID+'('+Distance(bucket[i].ID, ID)+')'+'</a> &nbsp;';
     }
   }
 
@@ -800,31 +783,71 @@ function StartupMethod(){
 }
 
 // Boostrap onto the network
-function Bootstrap(nIP, nPort){
-
+function Bootstrap(boostrapIP, boostrapPort){
   // Check that the ip and ports are not null or something
-  if(nIP != null && nPort != null){
-    console.log('Sending Ping');
+  if(boostrapIP != null && boostrapPort != null){
+    console.log('Boostrapping');
     // Send the ping
-    SendPing(nIP, nPort, function(error, response, body) { //function er respons på ping
-      console.log('I was ponged back');
-      if(response.statusCode == 200){
-        console.log('Code 200');
-        var senderID = response.headers['senderid'];
-        var senderIP = response.headers['senderip'];
-        var senderPort = response.headers['senderport'];
+    SendPing(boostrapIP, boostrapPort, function(error, response, body) { //function er respons på ping
+      if(error == null){
+        if(response.statusCode == 200){
+          var senderID = response.headers['senderid'];
+          var senderIP = response.headers['senderip'];
+          var senderPort = response.headers['senderport'];
 
-        AddNeighbourNode(senderID, senderIP, senderPort);
-        console.log('Sending Find Node to:', senderID, senderIP, senderPort);
-        SendFindNode(senderIP, senderPort, ID, function (error, reponse, body) {
-         	var kNodes = JSON.parse(body).nodes;
-          	console.log('Nodes returned', kNodes);
-         	//StartIterativeFindNode(kNodes, ID);
-        });
+          StartBoostrapOnNode(senderID, senderIP, senderPort);
+        }
       }
+
     });
   }
 }
+
+function StartBoostrapOnNode(nodeID, nodeIP, nodePort){
+
+  AddNeighbourNode(nodeID, nodeIP, nodePort);
+  SendFindNode(nodeIP, nodePort, ID, function (error, reponse, body) {
+
+    var kNodes = JSON.parse(body).nodes;
+    console.log('Nodes returned', kNodes);
+
+    for (var i = 0; i < kNodes.length; i++) {
+
+      SendPing(kNodes[i].IP, kNodes[i].Port, function (error, response, body){
+        console.log('Got a ping back during bootstrapping');
+        if(error == null){
+          if(response.statusCode == 200){
+            var senderID = response.headers['senderid'];
+            var senderIP = response.headers['senderip'];
+            var senderPort = response.headers['senderport'];
+            AddNeighbourNode(senderID, senderIP, senderPort);
+            SendFindNode(senderIP, senderPort, ID, function(error, response, body){
+              var newkNodes = JSON.parse(body).nodes;
+              console.log('new Nodes returned', newkNodes);
+              for (var i = 0; i < newkNodes.length; i++) {
+                SendPing(newkNodes[i].IP, newkNodes[i].Port, function (error, response, body){
+                  if(error == null){
+                    if(response.statusCode == 200){
+                      var senderID = response.headers['senderid'];
+                      var senderIP = response.headers['senderip'];
+                      var senderPort = response.headers['senderport'];
+                      AddNeighbourNode(senderID, senderIP, senderPort);
+                    }
+                  }
+                });
+              }
+            });
+          }
+        }
+
+      });
+
+    }
+
+  });
+
+}
+
 
 // STARTUP STUFF BELOW THIS LINE
 
