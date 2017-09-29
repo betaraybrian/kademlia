@@ -23,6 +23,8 @@ var DHT = [];
 
 var valueStored = {};
 
+var nodesVisited = [];
+
 var RCPIDSendOut = [];
 
 // Will be given through command prompt
@@ -374,11 +376,76 @@ function SearchNetworkForValue(fullKey){
 var nodes;
 var nodesVisited;
 
-function FindNode(initialListofNodes, targetID){
+//check if we have the node - else startiterativefindnode
+function FindNode(targetID){
+  if (targetID == ID){
+    return {'ID': ID, 'IP': hostname, 'Port': port};
+  }
+
+  var currentList = GetKClosestNodesToID(targetID);
+  if (BucketHasNodeWithID(targetID, currentList)){
+    return getElementWithIDFromList(targetID, currentList);
+  }
+  nodesVisited = [];
+  var result = IterativeFindNode(currentList, targetID);
+  if (result.length == 0){
+    return {'error' : 'Node does not exist'};
+  }else{
+    return getElementWithIDFromList(targetID, result);
+  }
+}
+
+function getElementWithIDFromList(targetID, list){
+  for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].ID == targetID){
+        return list[i];
+      }
+    }
+}
+
+
+
+function BucketHasNodeWithID(targetID, bucket){
+  for (var i = bucket.length - 1; i >= 0; i--) {
+    if (bucket[i].ID == targetID){
+      return true;
+    }
+  }
+  return false;
+}
+
+function IterativeFindNode(nodeList, targetID){
+  if (BucketHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
+    console.log(nodeList);
+    return nodeList;
+  }
+  var currentNode = nodeList.shift();
+  if (nodesVisited.includes(currentNode.ID)){
+    IterativeFindNode(nodeList, targetID);
+  }else{
+    nodesVisited.push(currentNode.ID);
+    SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
+      if (error == null){
+        if(response.statusCode == 200){
+          var kNodes = JSON.parse(body).nodes;
+          for (var i = kNodes.length - 1; i >= 0; i--) {
+            if (nodesVisited.includes(kNodes[i].ID) == false){
+              nodeList.push(kNodes[i]);
+            } 
+          }
+        }
+      }
+      ÏterativeFindNode(nodeList, targetID);
+    });
+  }
+}
+
+/*
+function StartIterativeFindNode(initialListofNodes, targetID){
 	nodes = initialListofNodes;
 	nodesVisited = [];
 	var limit = Math.min(nodes.length,alpha);
-	for(var i=0; i<limit; i++){
+	for(var i=0; i<limit; i++){ //start parallellism
 		nodesVisited.push(nodes[i]);
 		var currentNode = nodes[i];
 		nodes.splice(1,i); //remove the node we are just about to visit  from the visit list
@@ -411,8 +478,8 @@ function FindNode(initialListofNodes, targetID){
 			}
 		});
 	}
-
 }
+
 
 function IterativeFindNode(node, targetID){
 	nodesVisited.push(node);
@@ -445,7 +512,7 @@ function IterativeFindNode(node, targetID){
 
 	});
 }
-
+*/
 
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
@@ -476,6 +543,9 @@ app.get('/', function (req, res) {
     +'<input type=\"text\" name=\"ip\"><br>Port:<br>'
     +'<input type=\"text\" name=\"port\">'
     +'<input type=\"submit\" value="Ping Node\"></form>'
+    +'<br> <form action=\"/findNodeManually\" method=\"get\">Find Node:<br>'
+    +'<input type=\"text\" name=\"nodeID\">'
+    +'<input type=\"submit\" value="Find Node\"></form>'
     +'<br> My Values: <br>' + GetValueStoredAsHTML()
     +'<br> <form action=\"/storeValueManually\" method=\"post\">ValueID:<br>'
     +'<input type=\"text\" name=\"valueID\"><br>Value:<br>'
@@ -621,6 +691,17 @@ app.post('/storeValueManually', function (req, res) {
     res.end();
 });
 
+//called when finding a node manually
+app.get('/findNodeManually', function(req,res){
+  var nodeID = req.param('nodeID', null);
+
+  var result = FindNode(nodeID);
+  res.type('json');
+  res.status(200);
+  
+  res.send( JSON.stringify( result ) );
+});
+
 
 // Variables for pinging a list of nodes
 // Because pinging is asynchronous we need to keep track of how far we have gone
@@ -718,7 +799,7 @@ function Bootstrap(nIP, nPort){
         SendFindNode(senderIP, senderPort, ID, function (error, reponse, body) {
          	var kNodes = JSON.parse(body).nodes;
           	console.log('Nodes returned', kNodes);
-         	FindNode(kNodes, ID);
+         	//StartIterativeFindNode(kNodes, ID);
         });
       }
     });
