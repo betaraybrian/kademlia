@@ -387,7 +387,8 @@ function FindNode(targetID){
     return getElementWithIDFromList(targetID, currentList);
   }
   nodesVisited = [];
-  var result = IterativeFindNode(currentList, targetID);
+  IterativeFindNode(currentList, targetID);
+  console.log('result', result );
   if (result.length == 0){
     return {'error' : 'Node does not exist'};
   }else{
@@ -414,14 +415,17 @@ function BucketHasNodeWithID(targetID, bucket){
   return false;
 }
 
+var resultList = null;
+
 function IterativeFindNode(nodeList, targetID){
   if (BucketHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
-    console.log(nodeList);
+    console.log('================ooo===============',nodeList);
+    resultList = nodeList;
     return nodeList;
   }
   var currentNode = nodeList.shift();
   if (nodesVisited.includes(currentNode.ID)){
-    IterativeFindNode(nodeList, targetID);
+    return IterativeFindNode(nodeList, targetID);
   }else{
     nodesVisited.push(currentNode.ID);
     SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
@@ -435,7 +439,7 @@ function IterativeFindNode(nodeList, targetID){
           }
         }
       }
-      ÏterativeFindNode(nodeList, targetID);
+      return IterativeFindNode(nodeList, targetID);
     });
   }
 }
