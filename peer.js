@@ -377,52 +377,61 @@ var nodes;
 var nodesVisited;
 
 //check if we have the node - else startiterativefindnode
+// Starts an IterativeFindNode search for the node with targetID
+// Once done it calls onFinishedCallback with either the requested node or an error message
 function FindNode(targetID, onFinishedCallback){
   if (targetID == ID){
-    return {'ID': ID, 'IP': hostname, 'Port': port};
+    // tell the caller that we have found what they are looking for
+    onFinishedCallback( {'ID': ID, 'IP': hostname, 'Port': port} );
   }
 
   var currentList = GetKClosestNodesToID(targetID);
-  if (BucketHasNodeWithID(targetID, currentList)){
-    return getElementWithIDFromList(targetID, currentList);
+  if (ListHasNodeWithID(targetID, currentList)){
+    // tell the caller that we have found what they are looking for
+    onFinishedCallback( GetElementWithIDFromList(targetID, currentList) );
   }
   nodesVisited = [];
+
+  // the function (result) will be called once the iterative search is done
   IterativeFindNode(currentList, targetID, function(result){
-    console.log('result is here', result );
+    // This will be called after the iterative search is done
     if (result.length == 0){
       onFinishedCallback( {'error' : 'Node does not exist'} );
     }else{
-      onFinishedCallback( getElementWithIDFromList(targetID, result) );
+      onFinishedCallback( GetElementWithIDFromList(targetID, result) );
     }
   });
 
 
 }
 
-function getElementWithIDFromList(targetID, list){
+// Returns the element in the list with the specific id of targetID
+function GetElementWithIDFromList(targetID, list){
   for (var i = list.length - 1; i >= 0; i--) {
-      if (list[i].ID == targetID){
-        return list[i];
-      }
+    if (list[i].ID == targetID){
+      return list[i];
     }
+  }
+  return null;
 }
 
 
-
-function BucketHasNodeWithID(targetID, bucket){
-  for (var i = bucket.length - 1; i >= 0; i--) {
-    if (bucket[i].ID == targetID){
+// Checks if a specific node with the id of targetID is present in the list
+function ListHasNodeWithID(targetID, list){
+  for (var i = list.length - 1; i >= 0; i--) {
+    if (list[i].ID == targetID){
       return true;
     }
   }
   return false;
 }
 
-
+// Starts looking for the node with targetID in the network
+// Will keep looking until it has found the node or we have no more nodes to look at in the network
+// Calls the onFinishedCallback with the list of nodes we know
 function IterativeFindNode(nodeList, targetID, onFinishedCallback){
-  if (BucketHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
-    console.log('================ooo===============',nodeList);
-    onFinishedCallback(nodeList);
+  if (ListHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
+    onFinishedCallback(nodeList); // Notify our caller that we are finished
     return nodeList;
   }
   var currentNode = nodeList.shift();
@@ -701,7 +710,10 @@ app.post('/storeValueManually', function (req, res) {
 app.get('/findNodeManually', function(req,res){
   var nodeID = req.param('nodeID', null);
 
+  // Start looking for the specific nodeID
+  // function(result) will be run once the search is complete
   FindNode(nodeID, function(result){
+    // We are done search. Send our result and end the response
     res.type('json');
     res.status(200);
 
