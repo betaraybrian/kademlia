@@ -106,7 +106,7 @@ function AddNodeToDHT(node, index){
       // There is room. Add the node
       bucket.push(node);
       console.log('Adding node', node);
-      return;
+
     }else{
       // No room. Check if we are closer to the node than any of the ones in the list
       var indexOfNodeWithLongerDistance = -1;
@@ -124,15 +124,19 @@ function AddNodeToDHT(node, index){
         bucket.splice(1, indexOfNodeWithLongerDistance);
         bucket.push(node);
         console.log('Adding node', node);
-        return;
+
       }else{
         // No room in bucket and we weren't closer than any of the ones there
         // Let's see if they are all still alive
         console.log('Ping stuff in list');
-        return;
+
       }
 
     }
+  }
+
+  while(bucket.length > k){
+    bucket.splice(1, bucket.length-1);
   }
 }
 
@@ -381,7 +385,9 @@ function FindNode(targetID, onFinishedCallback){
     if (result.length == 0){
       onFinishedCallback( {'error' : 'Node does not exist'} );
     }else{
-      onFinishedCallback( GetElementWithIDFromList(targetID, result) );
+      var resultNode = GetElementWithIDFromList(targetID, result) ;
+      AddNeighbourNode(resultNode.ID, resultNode.IP, resultNode.Port);
+      onFinishedCallback(resultNode);
     }
   });
 
@@ -413,28 +419,34 @@ function ListHasNodeWithID(targetID, list){
 // Will keep looking until it has found the node or we have no more nodes to look at in the network
 // Calls the onFinishedCallback with the list of nodes we know
 function IterativeFindNode(nodeList, targetID, onFinishedCallback){
+  console.log('IterativeFindNode called');
   if (ListHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
+    console.log('Done looking for node');
     onFinishedCallback(nodeList); // Notify our caller that we are finished
-    return nodeList;
-  }
-  var currentNode = nodeList.shift();
-  if (nodesVisited.includes(currentNode.ID)){
-    return IterativeFindNode(nodeList, targetID, onFinishedCallback);
   }else{
-    nodesVisited.push(currentNode.ID);
-    SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
-      if (error == null){
-        if(response.statusCode == 200){
-          var kNodes = JSON.parse(body).nodes;
-          for (var i = kNodes.length - 1; i >= 0; i--) {
-            if (nodesVisited.includes(kNodes[i].ID) == false){
-              nodeList.push(kNodes[i]);
+      var currentNode = nodeList.shift();
+
+      if (nodesVisited.includes(currentNode.ID) || currentNode.ID == ID){
+        console.log('We have already looked at : ', currentNode);
+        IterativeFindNode(nodeList, targetID, onFinishedCallback);
+      }else{
+        console.log('Sending IterativeFindNode to : ', currentNode);
+        nodesVisited.push(currentNode.ID);
+        SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
+          if (error == null){
+            if(response.statusCode == 200){
+              var kNodes = JSON.parse(body).nodes;
+              console.log('We got nodes back : ', currentNode);
+              for (var i = kNodes.length - 1; i >= 0; i--) {
+                if (nodesVisited.includes(kNodes[i].ID) == false){
+                  nodeList.push(kNodes[i]);
+                }
+              }
             }
           }
-        }
+          IterativeFindNode(nodeList, targetID, onFinishedCallback);
+        });
       }
-      return IterativeFindNode(nodeList, targetID, onFinishedCallback);
-    });
   }
 }
 
@@ -691,7 +703,9 @@ app.post('/storeValueManually', function (req, res) {
 
 //called when finding a node manually
 app.get('/findNodeManually', function(req,res){
-  var nodeID = req.param('nodeID', null);
+    var nodeID = req.param('nodeID', null);
+  console.log((new Date()).toDateString(), "-Looking for node with id : "+nodeID+"-" );
+
 
   // Start looking for the specific nodeID
   // function(result) will be run once the search is complete
@@ -705,67 +719,6 @@ app.get('/findNodeManually', function(req,res){
 
 });
 
-
-// Variables for pinging a list of nodes
-// Because pinging is asynchronous we need to keep track of how far we have gone
-
-var nodesToPing = [];
-var index = 0;
-
-// Sets up the variables and pings the first node
-function PingList(nodes, callbackFunction){
-  console.log('Pinging List');
-  nodesToPing = nodes;
-  index = 0;
-  PingNext(callbackFunction, true, []);
-}
-
-// Checks if the index is a valid node in the nodesToPing list
-// If it is, then it pings it and only when it gets a response does it check the next one
-function PingNext(callbackFunction, isAllAlive, badIndexes){
-  // Is there more nodes to ping?
-  console.log(index);
-  if(index >= nodesToPing.length){
-    console.log('End of ping list');
-    callbackFunction(isAllAlive, badIndexes);
-    return;
-  }
-
-  if(nodesToPing[index].IP == hostname && nodesToPing[index].Port == port && nodesToPing[index].ID == ID){
-    // Don't ping ourselves
-    index++;
-    PingNext(callbackFunction, isAllAlive, badIndexes);
-  }else{
-    // More nodes! Send the ping
-    SendPing(nodesToPing[index].IP, nodesToPing[index].Port, function(error, response, body){
-      console.log('--test--');
-      if(error != null){
-        if(response.statusCode == 200){
-          // The node is alive
-          console.log('Code 200b');
-          index++;
-          PingNext(callbackFunction, isAllAlive, badIndexes);
-        }else{
-          // The node is not alive
-          console.log('bad index here');
-          badIndexes.push(index);
-          index++;
-          PingNext(callbackFunction, false, badIndexes);
-        }
-      }else{
-        // The node is not alive
-        console.log('bad index here');
-        badIndexes.push(index);
-        index++;
-        PingNext(callbackFunction, false, badIndexes);
-      }
-
-    });
-  }
-
-
-
-}
 
 // start the server in the port 3000 !
 app.listen(port, function () {
