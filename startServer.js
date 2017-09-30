@@ -25,16 +25,30 @@ var EndString = ' localhost '+StartPort;
 
 
 var Port = StartPort;
-for(var i = 0; i < NumberOfServers; i++){
-  console.log('Starting a server on port: '+Port);
-  child = exec('node peer.js '+Port+((i == 0)? '': EndString),
-    function (error, stdout, stderr) {
-        console.log('stdout: ' + stdout);
-        console.log('stderr: ' + stderr);
-        if (error !== null) {
-            console.log('exec error: ' + error);
-        }
-  });
 
-  Port++;
+StartUpServer(StartPort, '');
+
+function StartUpServer(port, endString){
+  if(port >= (StartPort + parseInt(NumberOfServers))){
+    return;
+  }else{
+    console.log('Starting server on port: '+port);
+    console.log('node peer.js '+port+endString);
+    child = exec('node peer.js '+port+endString,
+      function (error, stdout, stderr) {
+          console.log('stdout: ' + stdout);
+          console.log('stderr: ' + stderr);
+          if (error !== null) {
+              console.log('exec error: ' + error);
+          }
+    });
+
+
+    setTimeout(function(){
+      port++;
+      StartUpServer(port, EndString);
+    }, 500);
+
+  }
+
 }

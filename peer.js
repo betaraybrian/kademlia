@@ -239,6 +239,7 @@ function SendPing(nodeIP, nodePort, callbackFunction, rcpid){
 
 if(nodeIP == hostname && nodePort == port){
   // this is ourselves
+  callbackFunction({'error' : 'Called on own peer'}, null, null);
   return;
 }
 
@@ -250,6 +251,7 @@ if(nodeIP == hostname && nodePort == port){
     RCPIDSendOut.push(rcpid);
   }else{
   	if(IsOriginOfRCPID(rcpid)){
+      callbackFunction({'error' : 'Already made request with this RCPID'}, null, null);
   		return;
   	}
     console.log('Sending ping with already known rcpid');
@@ -278,6 +280,7 @@ function SendFindNode(nodeIP, nodePort, targetID, callbackFunction){
 
   if(nodeIP == hostname && nodePort == port){
     // this is ourselves
+    callbackFunction({'error' : 'Called on own peer'}, null, null);
     return;
   }
   var RCPID = sha1((Math.random()*160*7)+"");
@@ -360,7 +363,6 @@ function SearchNetworkForValue(fullKey){
 	return result;
 }
 
-var nodes;
 var nodesVisited;
 
 //check if we have the node - else startiterativefindnode
