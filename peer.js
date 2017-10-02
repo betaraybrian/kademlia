@@ -299,19 +299,46 @@ function SendFindNode(nodeIP, nodePort, targetID, callbackFunction){
   request(options, callbackFunction);
 }
 
+function SendFindValue(nodeIP, nodePort, key, callbackFunction){
+
+  if(nodeIP == hostname && nodePort == port){
+    // this is ourselves
+    callbackFunction({'error' : 'Called on own peer'}, null, null);
+    return;
+  }
+  var RCPID = sha1((Math.random()*160*7)+"");
+  RCPIDSendOut.push(RCPID);
+
+  var options = {
+    uri: 'http://'+nodeIP+':'+nodePort+'/api/kademlia/find_value',
+    headers: {
+      'rcpid': RCPID,
+      'senderid': ID,
+      'senderip': hostname,
+      'senderport': port,
+      'key': key
+    }
+  };
+  request(options, callbackFunction);
+}
+
 function Store(value, valueID){
   var fullKey = sha1(valueID);
   var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
-  valueStored[fullKey] = value;
   var nodes = GetKClosestNodesToID(key);
-
-  for(var i = 0; i < nodes.length; i++){
-    SendStoreValue(nodes[i], fullKey, value, function(){});
-  }
-  console.log(valueStored);
+  IterativeFindNode(nodes, key, function(result){
+    console.log(result);
+    var limit = Math.min(k, result.length);
+  	for(var i = 0; i < limit; i++){
+    	SendStoreValue(result[i], key, value, function(error, response, body){});
+  	}
+  });
+  
 }
 
-function SendStoreValue(node, fullKey, value, callbackFunction) {
+function SendStoreValue(node, key, value, callbackFunction) {
+    console.log((new Date()).toDateString(), "-SendStoreValue-" );
+
    var RCPID = sha1((Math.random()*160*7)+"");
   RCPIDSendOut.push(RCPID);
 
@@ -322,15 +349,15 @@ function SendStoreValue(node, fullKey, value, callbackFunction) {
       'senderid': ID,
       'senderip': hostname,
       'senderport': port,
-      'fullkey': fullKey,
+      'key': key,
       'value': value
     }
   };
   request.post(options, callbackFunction);
 }
 
-function GetValue(fullKey){
-	var value = valueStored[fullKey];
+function GetValue(key){
+	var value = valueStored[key];
 	if(value == null || value === undefined){
 		return undefined;
 	}else{
@@ -339,21 +366,50 @@ function GetValue(fullKey){
 }
 
 
-function FindValue(fullKey){
-	var value = GetValue(fullKey);
-	if(value === undefined){
-		//find other nodes, we don't have the value
-		var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16);
+function FindValue(key){
+	var value = GetValue(key);
+	if(value === undefined){// we don't have the value
+		//find other nodes
 		var nodes = GetKClosestNodesToID(key);
-		return {'nodes' : nodes};
 
-	}else{
-		return {'value': value};
 	}
 }
 
-function SearchNetworkForValue(fullKey){
-	var result = FindValue(fullKey);
+
+function IterativeFindValue(nodeList, key, onFinishedCallback){
+  console.log('IterativeFindValue called');
+  if (ListHasNodeWithID(key, nodeList) || nodeList.length == 0){
+    console.log('Done looking for node');
+    onFinishedCallback(nodeList); // Notify our caller that we are finished
+  }else{
+      var currentNode = nodeList.shift();
+
+      if (nodesVisited.includes(currentNode.ID) || currentNode.ID == ID){
+        console.log('We have already looked at : ', currentNode);
+        IterativeFindNode(nodeList, key, onFinishedCallback);
+      }else{
+        console.log('Sending IterativeFindValue to : ', currentNode);
+        nodesVisited.push(currentNode.ID);
+        SendFindValue(currentNode.IP, currentNode.Port, key, function(error, response, body){
+          if (error == null){
+            if(response.statusCode == 200){
+              var kNodes = JSON.parse(body).nodes;
+              console.log('We got nodes back : ', currentNode);
+              for (var i = kNodes.length - 1; i >= 0; i--) {
+                if (nodesVisited.includes(kNodes[i].ID) == false){
+                  nodeList.push(kNodes[i]);
+                }
+              }
+            }
+          }
+          IterativeFindNode(nodeList, targetID, onFinishedCallback);
+        });
+      }
+  }
+}
+
+function SearchNetworkForValue(key){
+	var result = FindValue(key);
 	while(result.hasOwnProperty('nodes')){
 		//search for other nodes
 		for(var i=0; i<alpha; i++){
@@ -384,7 +440,7 @@ function FindNode(targetID, onFinishedCallback){
   // the function (result) will be called once the iterative search is done
   IterativeFindNode(currentList, targetID, function(result){
     // This will be called after the iterative search is done
-    if (result.length == 0){
+    if (ListHasNodeWithID(targetID, result) == false){
       onFinishedCallback( {'error' : 'Node does not exist'} );
     }else{
       var resultNode = GetElementWithIDFromList(targetID, result) ;
@@ -424,16 +480,26 @@ function IterativeFindNode(nodeList, targetID, onFinishedCallback){
   console.log('IterativeFindNode called');
   if (ListHasNodeWithID(targetID, nodeList) || nodeList.length == 0){
     console.log('Done looking for node');
+    if(nodeList.length == 0){
+    	nodesVisited.sort(function(a, b){return Distance(a.ID, targetID) - Distance(b.ID, targetID)});
+    	nodeList = nodesVisited;
+    }
+    else{
+        nodesVisited.sort(function(a, b){return Distance(a.ID, targetID) - Distance(b.ID, targetID)});
+        while(nodeList.length < k && nodesVisited.length > 0){
+            nodeList.push(nodesVisited.shift());// make sure there's k nodes in the list
+        }
+    }
     onFinishedCallback(nodeList); // Notify our caller that we are finished
   }else{
       var currentNode = nodeList.shift();
 
-      if (nodesVisited.includes(currentNode.ID) || currentNode.ID == ID){
+      if (ListHasNodeWithID(currentNode.ID, nodesVisited) || currentNode.ID == ID){
         console.log('We have already looked at : ', currentNode);
         IterativeFindNode(nodeList, targetID, onFinishedCallback);
       }else{
         console.log('Sending IterativeFindNode to : ', currentNode);
-        nodesVisited.push(currentNode.ID);
+        nodesVisited.push(currentNode);
         SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
           if (error == null){
             if(response.statusCode == 200){
@@ -658,9 +724,9 @@ app.post('/api/kademlia/store', function(req, res){
     var senderIP = req.header('senderip');
     var senderPort = req.header('senderport');
     var rcpid = req.header('rcpid');
-    var fullKey = req.header('fullkey');
+    var key = req.header('key');
     var value = req.header('value');
-    valueStored[fullKey] = value;
+    valueStored[key] = value;
     res.sendStatus(200);
 });
 
@@ -671,9 +737,9 @@ app.get('/api/kademlia/find_value', function(req, res){
     var senderIP = req.header('senderip');
     var senderPort = req.header('senderport');
     var rcpid = req.header('rcpid');
-    var fullKey = req.header('fullkey');
+    var key = req.header('key');
 
-    var result = FindValue(fullKey);
+    var result = FindValue(key);
     res.type('json');
     res.status(200);
 
