@@ -23,7 +23,9 @@ var DHT = [];
 
 var valueStored = {};
 
-var nodesVisited = [];
+var nodesVisited = []; //findnode
+
+var nodesVisitedForValue = []
 
 var RCPIDSendOut = [];
 
@@ -366,47 +368,59 @@ function GetValue(key){
 }
 
 
-function FindValue(key){
+function FindValue(key, onFinishedCallback){
 	var value = GetValue(key);
 	if(value === undefined){// we don't have the value
 		//find other nodes
 		var nodes = GetKClosestNodesToID(key);
 
+        IterativeFindValue(nodes, null, key, function(result){
+            if(result == null){
+                onFinishedCallback({'error': 'value does not exist in network'});
+            }
+            else{
+                onFinishedCallback(result);
+            }
+        });
 	}
 }
 
-
-function IterativeFindValue(nodeList, key, onFinishedCallback){
+function IterativeFindValue(nodeList, JSONResult, key, onFinishedCallback){
   console.log('IterativeFindValue called');
-  if (ListHasNodeWithID(key, nodeList) || nodeList.length == 0){
-    console.log('Done looking for node');
-    onFinishedCallback(nodeList); // Notify our caller that we are finished
+  if ((JSONResult != null && JSONResult.hasOwnProperty("value")) || (JSONResult == null  && nodeList.length == 0)){
+    console.log('Done looking for value');
+    onFinishedCallback(JSONResult); // Notify our caller that we are finished
   }else{
+     if(JSONResult != null){
+        for(var i = 0; i < JSONResult.nodes.length; i++){
+            if(ListHasNodeWithID(JSONResult.nodes[i].ID, nodesVisitedForValue)==false){
+                nodeList.push(JSONResult.nodes[i])
+            }
+        }
+      }
       var currentNode = nodeList.shift();
 
-      if (nodesVisited.includes(currentNode.ID) || currentNode.ID == ID){
+
+      if (ListHasNodeWithID(currentNode.ID, nodesVisitedForValue) || currentNode.ID == ID){
         console.log('We have already looked at : ', currentNode);
-        IterativeFindNode(nodeList, key, onFinishedCallback);
+        IterativeFindValue(nodeList, null,  key, onFinishedCallback);
       }else{
-        console.log('Sending IterativeFindValue to : ', currentNode);
-        nodesVisited.push(currentNode.ID);
+        console.log('Sending IterativeFindNode to : ', currentNode);
+        nodesVisitedForValue.push(currentNode);
         SendFindValue(currentNode.IP, currentNode.Port, key, function(error, response, body){
-          if (error == null){
-            if(response.statusCode == 200){
-              var kNodes = JSON.parse(body).nodes;
-              console.log('We got nodes back : ', currentNode);
-              for (var i = kNodes.length - 1; i >= 0; i--) {
-                if (nodesVisited.includes(kNodes[i].ID) == false){
-                  nodeList.push(kNodes[i]);
+            var result = null;
+            if (error == null){
+                if(response.statusCode == 200){
+                    result = JSON.parse(body);
+                    console.log('We got nodes back : ', currentNode);
                 }
               }
-            }
-          }
-          IterativeFindNode(nodeList, targetID, onFinishedCallback);
+          IterativeFindValue(nodeList, result, key, onFinishedCallback);
         });
       }
   }
 }
+
 
 function SearchNetworkForValue(key){
 	var result = FindValue(key);
@@ -518,80 +532,6 @@ function IterativeFindNode(nodeList, targetID, onFinishedCallback){
   }
 }
 
-/*
-function StartIterativeFindNode(initialListofNodes, targetID){
-	nodes = initialListofNodes;
-	nodesVisited = [];
-	var limit = Math.min(nodes.length,alpha);
-	for(var i=0; i<limit; i++){ //start parallellism
-		nodesVisited.push(nodes[i]);
-		var currentNode = nodes[i];
-		nodes.splice(1,i); //remove the node we are just about to visit  from the visit list
-		if(currentNode.IP == hostname && currentNode.Port == port && currentNode.ID == ID){
-			continue; //if this node is us then skip to next node in the forloop
-		}
-		console.log('sending findnode to', currentNode);
-		SendFindNode(currentNode.IP, currentNode.Port, targetID, function(error, response, body){
-			console.log(error);
-			if(response.statusCode == 200){
-				SendPing(currentNode.IP, currentNode.Port, function(error, response, body){
-					console.log('Got Ping fakjdlhdjaksdh');
-					if(response.statusCode == 200){
-						var senderID = response.headers['senderid'];
-        				var senderIP = response.headers['senderip'];
-       					var senderPort = response.headers['senderport'];
-
-        				AddNeighbourNode(senderID, senderIP, senderPort);
-					}
-				});
-				var kNodes = JSON.parse(body).nodes;
-				for (var i = kNodes.length - 1; i >= 0; i--) { // running thorugh the list backwards
-					if(nodesVisited.includes(kNodes[i]) == false){ //not visited this node before, then push
-						nodes.push(kNodes[i]);
-					}
-				}
-			}
-			if(nodes.length > 0){
-				IterativeFindNode(nodes.shift(), targetID); // shift = take first node in array and return it
-			}
-		});
-	}
-}
-
-
-function IterativeFindNode(node, targetID){
-	nodesVisited.push(node);
-	if((node.IP == hostname && node.Port == port && node.ID == ID) || nodesVisited.includes(node)){
-		if(nodes.length > 0){
-			IterativeFindNode(nodes.shift(), targetID); // remove first element in list and return it
-		}
-		return; // stop running the rest of the code if this is the case
-	}
-	SendFindNode(node.IP, node.Port, targetID, function(error, response, body){
-		if(response.statusCode == 200){
-			SendPing(node.IP, node.Port, function(error, response, body){
-				console.log('Got Ping oiahdjksahakjdlhdjaksdh');
-					if(response.statusCode == 200){
-						var senderID = response.headers['senderid'];
-        				var senderIP = response.headers['senderip'];
-       					var senderPort = response.headers['senderport'];
-
-        				AddNeighbourNode(senderID, senderIP, senderPort);
-					}
-			});
-			var kNodes = JSON.parse(body).nodes;
-			for (var i = kNodes.length - 1; i >= 0; i--) { // running thorugh the list backwards
-				if(nodesVisited.includes(kNodes[i]) == false){ //not visited this node before, then push
-					nodes.push(kNodes[i]);
-				}
-			}
-		}
-		IterativeFindNode(nodes.shift(), targetID); // shift = take first node in array and return it
-
-	});
-}
-*/
-
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
   extended: true
@@ -629,6 +569,11 @@ app.get('/', function (req, res) {
     +'<input type=\"text\" name=\"valueID\"><br>Value:<br>'
     +'<input type=\"text\" name=\"value\">'
     +'<input type=\"submit\" value="Store Value\"></form>'
+    +'<br> <form action=\"/findValueManually\" method=\"get\">ValueID:<br>'
+    +'<input type=\"text\" name=\"valueID\"><br>Value:<br>'
+    +'<input type=\"submit\" value="Find Value\"></form>'
+
+
 
     );
 
@@ -739,7 +684,13 @@ app.get('/api/kademlia/find_value', function(req, res){
     var rcpid = req.header('rcpid');
     var key = req.header('key');
 
-    var result = FindValue(key);
+    var result = GetValue(key);
+    if(result === undefined){
+        result = {'nodes': GetKClosestNodesToID(key)};
+    }
+    else{
+        result = {'value': result};
+    }
     res.type('json');
     res.status(200);
 
@@ -787,6 +738,18 @@ app.get('/findNodeManually', function(req,res){
 
 });
 
+app.get('/findValueManually', function(req, res){
+    var valueID = req.param('valueID', null);
+    console.log((new Date()).toDateString(), "-Looking for value with id : "+valueID+"-" );
+    var fullKey = sha1(valueID);
+    var key = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
+    FindValue(key, function(result){
+        res.type('json');
+        res.status(200);
+        res.send( JSON.stringify( result ) );
+    });
+
+});
 
 // start the server in the port 3000 !
 app.listen(port, function () {
