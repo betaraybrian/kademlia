@@ -722,7 +722,7 @@ app.post('/storeValueManually', function (req, res) {
 
 //called when finding a node manually
 app.get('/findNodeManually', function(req,res){
-    var nodeID = req.param('nodeID', null);
+  var nodeID = req.param('nodeID', null);
   console.log((new Date()).toDateString(), "-Looking for node with id : "+nodeID+"-" );
 
 
@@ -748,6 +748,24 @@ app.get('/findValueManually', function(req, res){
         res.status(200);
         res.send( JSON.stringify( result ) );
     });
+
+});
+
+
+app.get('/getNodesClosetoID',function(req, res){
+  var nodeID = req.param('nodeID', null);
+  console.log((new Date()).toDateString(), "-Looking for node with id : "+nodeID+"-" );
+
+
+  // Start looking for the specific nodeID
+  // function(result) will be run once the search is complete
+  IterativeFindNode(GetKClosestNodesToID(nodeID), nodeID, function(result){
+    // We are done search. Send our result and end the response
+    res.type('json');
+    res.status(200);
+
+    res.send( JSON.stringify( {'nodes': result} ) );
+  });
 
 });
 
