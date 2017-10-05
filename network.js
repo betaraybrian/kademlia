@@ -64,11 +64,10 @@ app.get('/', function (req, res) {
 app.get('/connect', function (req, res) {
   
   var url = req.header('url');
-  var deviceID = req.header('deviceID');
   var refreshrate = req.header('refreshrate');
  
 
-  Connect(url, deviceID, refreshrate);
+  Connect(url, refreshrate);
   res.send()
   res.end();
 })
