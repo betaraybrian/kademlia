@@ -29,6 +29,8 @@ var nodesVisitedForValue = []
 
 var RCPIDSendOut = [];
 
+var metaDataStored = {};
+
 // Will be given through command prompt
 var BoostrapIP = ''; // The IP of the first node we are gonna connect to
 var BoostrapPort = 0; // The port of the first node we are gonna connect to
@@ -330,6 +332,11 @@ function Store(value, valueID){
   var nodes = GetKClosestNodesToID(key);
   IterativeFindNode(nodes, key, function(result){
     console.log(result);
+    if(ListHasNodeWithID(ID, result) == false){ //check om jeg selv er på listen og ellers put mig på og re-sort
+        result.push({ID:ID, IP:hostname, Port:port});
+        result.sort(function(a, b){return Distance(a.ID, key) - Distance(b.ID, key)});
+
+    }
     var limit = Math.min(k, result.length);
   	for(var i = 0; i < limit; i++){
     	SendStoreValue(result[i], key, value, function(error, response, body){});
@@ -358,6 +365,24 @@ function SendStoreValue(node, key, value, callbackFunction) {
   request.post(options, callbackFunction);
 }
 
+function StoreMetaData(deviceID, url, refreshRate){
+    metaDataStored[deviceID]= {'deviceID':deviceID, 'url':url, 'refreshRate':refreshRate};
+
+}
+
+function GetHTMLFromStoredMetaData(){
+    var HTML = '<table border=\"1\">';
+    var keys = Object.getOwnPropertyNames(metaDataStored);
+    if(keys.length > 0){
+        HTML += '<tr> <th> deviceID </th> <th> url </th> </tr>';
+    }
+    for(var i = 0; i < keys.length; i++){
+        HTML += '<tr> <td>' + metaDataStored[keys[i]].deviceID + '</td> <td> <a href=\"' + metaDataStored[keys[i]].url +'\">'+metaDataStored[keys[i]].url+'</a> </td> </tr>';
+    }
+    HTML += '</table>';
+    return HTML;
+}
+
 function GetValue(key){
 	var value = valueStored[key];
 	if(value == null || value === undefined){
@@ -383,6 +408,9 @@ function FindValue(key, onFinishedCallback){
             }
         });
 	}
+    else{
+        onFinishedCallback({'value': value});
+    }
 }
 
 function IterativeFindValue(nodeList, JSONResult, key, onFinishedCallback){
@@ -572,6 +600,7 @@ app.get('/', function (req, res) {
     +'<br> <form action=\"/findValueManually\" method=\"get\">ValueID:<br>'
     +'<input type=\"text\" name=\"valueID\"><br>Value:<br>'
     +'<input type=\"submit\" value="Find Value\"></form>'
+    +'<br> My Devices: <br>' + GetHTMLFromStoredMetaData()
 
 
 
@@ -672,6 +701,14 @@ app.post('/api/kademlia/store', function(req, res){
     var key = req.header('key');
     var value = req.header('value');
     valueStored[key] = value;
+    res.sendStatus(200);
+});
+
+app.post('/storeMetaData', function(req, res){
+    var deviceID = req.header('deviceID');
+    var url = req.header('url');
+    var refreshRate = req.header('refreshRate');
+    StoreMetaData(deviceID, url, refreshRate);
     res.sendStatus(200);
 });
 
