@@ -31,6 +31,9 @@ var RCPIDSendOut = [];
 
 var metaDataStored = {};
 
+var networkIP = 'localhost';
+
+var networkPort = 2000;
 // Will be given through command prompt
 var BoostrapIP = ''; // The IP of the first node we are gonna connect to
 var BoostrapPort = 0; // The port of the first node we are gonna connect to
@@ -560,6 +563,19 @@ function IterativeFindNode(nodeList, targetID, onFinishedCallback){
   }
 }
 
+function SendHistoricalDataToNetwork(IP, Port, deviceID, value, callbackFunction){
+     console.log((new Date()).toDateString(), "-SendHistoricalDataToNetwork-" );
+
+  var options = {
+    uri: 'http://'+IP+':'+Port+'/saveData',
+    headers: {
+      'deviceID': deviceID,
+      'value': value
+    }
+  };
+  request.post(options, callbackFunction); 
+}
+
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
   extended: true
@@ -751,8 +767,12 @@ app.post('/onbootstrap', function (req, res) {
 app.post('/storeValueManually', function (req, res) {
     var valueID = req.param('valueID', null);
     var value = req.param('value', null);
+    var fullKey = sha1(valueID);
+    var deviceID = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
+ 
     console.log(value, valueID);
     Store(value, valueID);
+    SendHistoricalDataToNetwork(networkIP, networkPort, deviceID, value, function(error,reponse,body){} );
     res.redirect('/');
     res.end();
 });

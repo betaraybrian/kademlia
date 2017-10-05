@@ -14,7 +14,7 @@ var mainPeerPort = 3000;
 
 var port = 2000;
 
-
+var historicalData = {};
 
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
@@ -67,9 +67,28 @@ app.get('/connect', function (req, res) {
   var refreshrate = req.header('refreshrate');
  
 
-  Connect(url, refreshrate);
-  res.send()
-  res.end();
+  Connect(url, refreshrate, function(node){
+  	res.type('json');
+    res.status(200);
+    res.send( JSON.stringify( node ) );
+
+  });
+})
+
+app.post('/saveData', function(req, res){
+ var deviceID = req.header('deviceID');
+ var value = req.header('value');
+ var data = historicalData[deviceID];
+ if(data == null ||data === undefined){
+ 	historicalData[deviceID] = [];
+ 	data = historicalData[deviceID];
+ }
+ data.push(value);
+})
+
+app.get('/historicalData', function(req, res){
+	res.send(JSON.stringify(historicalData));
+	res.end();
 })
 
 //log
@@ -77,8 +96,7 @@ app.listen(port, function () {
   console.log('Example app listening on port:' + port);
 })
 
-function Connect(url, refreshrate){
-
+function Connect(url, refreshrate, callbackFunction){
   var fullKey = sha1(url);
   var deviceID = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
 
@@ -89,6 +107,7 @@ function Connect(url, refreshrate){
   		if(error == null){
       	SendStore(result[0].IP, result[0].Port, "n/a", url, function(error, response, body){
         console.log('Value succesfully stored at ' + result[0].ID, result[0].IP, result[0].Port, response.statusCode);
+      	callbackFunction(result[0]);
       });
   		}
   	});
@@ -98,7 +117,7 @@ function Connect(url, refreshrate){
 
 
 function StartUp(){
-Connect("www.troels.com/sensor/temperatur", 10);
+Connect("www.troels.com/sensor/temperatur", 10, function(){});
 }
 
 StartUp();
