@@ -25,7 +25,7 @@ function SendFindNodeManually(nodeIP, nodePort, nodeID, callbackFunction){
 
   var options = {
     uri: 'http://'+nodeIP+':'+nodePort+'/getNodesClosetoID?nodeID='+ nodeID
-    
+
   };
   request(options, callbackFunction);
 }
@@ -33,23 +33,23 @@ function SendFindNodeManually(nodeIP, nodePort, nodeID, callbackFunction){
 function SendStore(nodeIP, nodePort, value, valueID, callbackFunction){
 
   var options = {
-    uri: 'http://'+nodeIP+':'+nodePort+'/storeValueManually', 
+    uri: 'http://'+nodeIP+':'+nodePort+'/storeValueManually',
     qs:{
     	value:value,
     	valueID:valueID
     }
-    
+
   };
   request.post(options, callbackFunction);
 }
 
 function SendStoreMetaData(nodeIP, nodePort, url, deviceID, refreshrate, callbackFunction){
 	var options = {
-    uri: 'http://'+nodeIP+':'+nodePort+'/storeMetaData', 
-   headers: {'url':url, 
-   'deviceID':deviceID, 
+    uri: 'http://'+nodeIP+':'+nodePort+'/storeMetaData',
+   headers: {'url':url,
+   'deviceID':deviceID,
    'refreshrate':refreshrate}
-    
+
   };
   request.post(options, callbackFunction);
 }
@@ -62,10 +62,10 @@ app.get('/', function (req, res) {
 })
 
 app.get('/connect', function (req, res) {
-  
+
   var url = req.header('url');
   var refreshrate = req.header('refreshrate');
- 
+
 
   Connect(url, refreshrate, function(node){
   	res.type('json');
@@ -111,7 +111,7 @@ function Connect(url, refreshrate, callbackFunction){
       });
   		}
   	});
-     
+
   });
 }
 

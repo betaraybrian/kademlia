@@ -33,6 +33,8 @@ var metaDataStored = {};
 
 var networkIP = 'localhost';
 
+var historicalData = {};
+
 var networkPort = 2000;
 // Will be given through command prompt
 var BoostrapIP = ''; // The IP of the first node we are gonna connect to
@@ -345,7 +347,18 @@ function Store(value, valueID){
     	SendStoreValue(result[i], key, value, function(error, response, body){});
   	}
   });
-  
+
+}
+
+function SendStoreMetaData(nodeIP, nodePort, url, deviceID, refreshrate, callbackFunction){
+	var options = {
+    uri: 'http://'+nodeIP+':'+nodePort+'/storeMetaData',
+   headers: {'url':url,
+   'deviceID':deviceID,
+   'refreshrate':refreshrate}
+
+  };
+  request.post(options, callbackFunction);
 }
 
 function SendStoreValue(node, key, value, callbackFunction) {
@@ -573,7 +586,7 @@ function SendHistoricalDataToNetwork(IP, Port, deviceID, value, callbackFunction
       'value': value
     }
   };
-  request.post(options, callbackFunction); 
+  request.post(options, callbackFunction);
 }
 
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
@@ -624,6 +637,62 @@ app.get('/', function (req, res) {
 
     res.end();
 });
+
+app.get('/connect', function (req, res) {
+
+  var url = req.header('url');
+  var refreshrate = req.header('refreshrate');
+
+
+  Connect(url, refreshrate, function(node){
+  	res.type('json');
+    res.status(200);
+    res.send( JSON.stringify( node ) );
+
+  });
+})
+
+function Connect(url, refreshrate, callbackFunction){
+  var fullKey = sha1(url);
+  var deviceID = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
+
+  FindNode(nodeID, function(result){
+
+    console.log(result[0]);
+    SendStoreMetaData(result[0].IP, result[0].Port, url, deviceID, refreshrate, function(error, response, body){
+  		if(error == null){
+      	SendStore(result[0].IP, result[0].Port, "n/a", url, function(error, response, body){
+        console.log('Value succesfully stored at ' + result[0].ID, result[0].IP, result[0].Port, response.statusCode);
+      	callbackFunction(result[0]);
+      });
+  		}
+  	});
+  });
+}
+
+function SendStore(nodeIP, nodePort, value, valueID, callbackFunction){
+
+  var options = {
+    uri: 'http://'+nodeIP+':'+nodePort+'/storeValueManually',
+    qs:{
+    	value:value,
+    	valueID:valueID
+    }
+
+  };
+  request.post(options, callbackFunction);
+}
+
+app.post('/saveData', function(req, res){
+ var deviceID = req.header('deviceID');
+ var value = req.header('value');
+ var data = historicalData[deviceID];
+ if(data == null ||data === undefined){
+ 	historicalData[deviceID] = [];
+ 	data = historicalData[deviceID];
+ }
+ data.push(value);
+})
 
 // On localhost:port/api/kadem/ping
 app.get('/api/kademlia/ping', function (req, res) {
@@ -752,6 +821,10 @@ app.get('/api/kademlia/find_value', function(req, res){
 
 });
 
+app.get('/historicalData', function(req, res){
+	res.send(JSON.stringify(historicalData));
+	res.end();
+})
 
 // Called whenever we manually ping a node through the form on the website
 app.post('/onbootstrap', function (req, res) {
@@ -769,7 +842,7 @@ app.post('/storeValueManually', function (req, res) {
     var value = req.param('value', null);
     var fullKey = sha1(valueID);
     var deviceID = parseInt(fullKey.substring(fullKey.length-2,fullKey.length),16); //to sidste bit tages og konverteres til integer
- 
+
     console.log(value, valueID);
     Store(value, valueID);
     SendHistoricalDataToNetwork(networkIP, networkPort, deviceID, value, function(error,reponse,body){} );
